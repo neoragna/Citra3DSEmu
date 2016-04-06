@@ -343,6 +343,7 @@ static void ProcessTriangleInternal(const Shader::OutputVertex& v0,
                                     bool reversed = false)
 {
     const auto& regs = g_state.regs;
+    const auto& framebuffer = regs.framebuffer;
     MICROPROFILE_SCOPE(GPU_Rasterization);
 
     // vertex positions in rasterizer coordinates
@@ -391,6 +392,12 @@ static void ProcessTriangleInternal(const Shader::OutputVertex& v0,
     max_x = Fix12P4::FromInt((max_x + frac).Int());
     max_y = Fix12P4::FromInt((max_y + frac).Int());
 
+    // Keep pixels inside framebuffer
+    min_x = std::max(min_x, Fix12P4::Zero());
+    min_y = std::max(min_y, Fix12P4::Zero());
+    max_x = std::min(max_x, Fix12P4::FromInt(framebuffer.GetWidth()));
+    max_y = std::min(max_y, Fix12P4::FromInt(framebuffer.GetHeight()));
+
     // Triangle filling rules: Pixels on the right-sided edge or on flat bottom edges are not
     // drawn. Pixels on any other triangle border are drawn. This is implemented with three bias
     // values which are added to the barycentric coordinates w0, w1 and w2, respectively.
@@ -417,7 +424,7 @@ static void ProcessTriangleInternal(const Shader::OutputVertex& v0,
     auto textures = regs.GetTextures();
     auto tev_stages = regs.GetTevStages();
 
-    bool stencil_action_enable = g_state.regs.output_merger.stencil_test.enable && g_state.regs.framebuffer.depth_format == Regs::DepthFormat::D24S8;
+    bool stencil_action_enable = g_state.regs.output_merger.stencil_test.enable && framebuffer.depth_format == Regs::DepthFormat::D24S8;
     const auto stencil_test = g_state.regs.output_merger.stencil_test;
 
     // Enter rasterization loop, starting at the center of the topleft bounding box corner.
@@ -1002,7 +1009,7 @@ static void ProcessTriangleInternal(const Shader::OutputVertex& v0,
                 }
             }
 
-            if (regs.framebuffer.allow_depth_stencil_write != 0 && output_merger.depth_write_enable)
+            if (framebuffer.allow_depth_stencil_write != 0 && output_merger.depth_write_enable)
                 SetDepth(x.Int(), y.Int(), z);
 
             // The stencil depth_pass action is executed even if depth testing is disabled
@@ -1211,7 +1218,7 @@ static void ProcessTriangleInternal(const Shader::OutputVertex& v0,
                 output_merger.alpha_enable ? blend_output.a() : dest.a()
             };
 
-            if (regs.framebuffer.allow_color_write != 0)
+            if (framebuffer.allow_color_write != 0)
                 DrawPixel(x.Int(), y.Int(), result);
         }
     }
