@@ -290,6 +290,14 @@ struct Fix12P4 {
         return static_cast<u16>(val & FracMask());
     }
 
+    Fix12P4 Ceil() const {
+        return FromRaw(static_cast<s16>(val + FracMask())).Floor();
+    }
+
+    Fix12P4 Floor() const {
+        return FromRaw(static_cast<s16>(val & IntMask()));
+    }
+
     operator s16() const {
         return val;
     }
@@ -387,11 +395,10 @@ static void ProcessTriangleInternal(const Shader::OutputVertex& v0,
 
     // TODO: Proper scissor rect test!
 
-    Fix12P4 frac = Fix12P4::FromInt(0, Fix12P4::FracMask());
-    min_x = Fix12P4::FromInt(min_x.Int(), 0);
-    min_y = Fix12P4::FromInt(min_y.Int(), 0);
-    max_x = Fix12P4::FromInt((max_x + frac).Int());
-    max_y = Fix12P4::FromInt((max_y + frac).Int());
+    min_x = min_x.Floor();
+    min_y = min_y.Floor();
+    max_x = max_x.Ceil();
+    max_y = max_y.Ceil();
 
     // Keep pixels inside framebuffer
     min_x = std::max(min_x, Fix12P4::Zero());
