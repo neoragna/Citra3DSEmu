@@ -344,6 +344,7 @@ static void ProcessTriangleInternal(const Shader::OutputVertex& v0,
 {
     const auto& regs = g_state.regs;
     const auto& framebuffer = regs.framebuffer;
+    const auto& output_merger = regs.output_merger;
     MICROPROFILE_SCOPE(GPU_Rasterization);
 
     // vertex positions in rasterizer coordinates
@@ -424,8 +425,8 @@ static void ProcessTriangleInternal(const Shader::OutputVertex& v0,
     auto textures = regs.GetTextures();
     auto tev_stages = regs.GetTevStages();
 
-    bool stencil_action_enable = g_state.regs.output_merger.stencil_test.enable && framebuffer.depth_format == Regs::DepthFormat::D24S8;
-    const auto stencil_test = g_state.regs.output_merger.stencil_test;
+    bool stencil_action_enable = output_merger.stencil_test.enable && framebuffer.depth_format == Regs::DepthFormat::D24S8;
+    const auto stencil_test = output_merger.stencil_test;
 
     // Enter rasterization loop, starting at the center of the topleft bounding box corner.
     // TODO: Not sure if looping through x first might be faster
@@ -841,7 +842,6 @@ static void ProcessTriangleInternal(const Shader::OutputVertex& v0,
                 }
             }
 
-            const auto& output_merger = regs.output_merger;
             // TODO: Does alpha testing happen before or after stencil?
             if (output_merger.alpha_test.enable) {
                 bool pass = false;
