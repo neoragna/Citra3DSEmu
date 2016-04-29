@@ -257,73 +257,6 @@ static u8 PerformStencilAction(Regs::StencilAction action, u8 old_stencil, u8 re
     }
 }
 
-// NOTE: Assuming that rasterizer coordinates are 12.4 fixed-point values
-struct Fix12P4 {
-    Fix12P4() {}
-
-    static Fix12P4 FromRaw(s16 val) {
-        Fix12P4 res;
-        res.val = val;
-        return res;
-    }
-
-    static Fix12P4 FromInt(s16 intVal, u16 fracVal = 0) {
-        return FromRaw(static_cast<s16>(((intVal * 16) & IntMask()) | (fracVal & FracMask())));
-    }
-
-    static Fix12P4 FromFloat(float fltVal) {
-        return FromRaw(static_cast<s16>(round(fltVal * 16.0f)));
-    }
-
-    static Fix12P4 Zero() {
-        return FromRaw(0);
-    }
-
-    static u16 FracMask() { return 0xF; }
-    static u16 IntMask() { return (u16)~0xF; }
-
-    s16 Int() const {
-        return static_cast<s16>((val & IntMask()) / 16);
-    }
-
-    u16 Frac() const {
-        return static_cast<u16>(val & FracMask());
-    }
-
-    Fix12P4 Ceil() const {
-        return FromRaw(static_cast<s16>(val + FracMask())).Floor();
-    }
-
-    Fix12P4 Floor() const {
-        return FromRaw(static_cast<s16>(val & IntMask()));
-    }
-
-    operator s16() const {
-        return val;
-    }
-
-    bool operator < (const Fix12P4& oth) const {
-        return (s16)*this < (s16)oth;
-    }
-
-    Fix12P4 operator + (const Fix12P4& oth) const {
-        return FromRaw(val + oth.val);
-    }
-
-    Fix12P4 operator / (const Fix12P4& oth) const {
-        return FromRaw(static_cast<s16>((int)val * 16 / (int)oth.val));
-    }
-
-    Fix12P4& operator += (const Fix12P4& oth) {
-        val += oth.val;
-        return *this;
-    }
-
-
-private:
-    s16 val;
-};
-
 /**
  * Calculate signed area of the triangle spanned by the three argument vertices.
  * The sign denotes an orientation.
@@ -333,8 +266,12 @@ private:
 static int SignedArea (const Math::Vec2<Fix12P4>& vtx1,
                        const Math::Vec2<Fix12P4>& vtx2,
                        const Math::Vec2<Fix12P4>& vtx3) {
-    const auto vec1 = Math::MakeVec(vtx2 - vtx1, 0);
-    const auto vec2 = Math::MakeVec(vtx3 - vtx1, 0);
+    const auto vec1 = Math::MakeVec<int>(static_cast<s16>(vtx2.x) - static_cast<s16>(vtx1.x),
+                                         static_cast<s16>(vtx2.y) - static_cast<s16>(vtx1.y),
+                                         0);
+    const auto vec2 = Math::MakeVec<int>(static_cast<s16>(vtx3.x) - static_cast<s16>(vtx1.x),
+                                         static_cast<s16>(vtx3.y) - static_cast<s16>(vtx1.y),
+                                         0);
     // TODO: There is a very small chance this will overflow for sizeof(int) == 4
     return Math::Cross(vec1, vec2).z;
 };
@@ -354,6 +291,9 @@ static void ProcessTriangleInternal(const Shader::OutputVertex& v0,
     const auto& framebuffer = regs.framebuffer;
     const auto& output_merger = regs.output_merger;
     MICROPROFILE_SCOPE(GPU_Rasterization);
+
+    // NOTE: Assuming that rasterizer coordinates are signed 12.4 fixed-point values.
+    //       This type is what PSP uses, we haven't tested what the 3DS uses.
 
     // vertex positions in rasterizer coordinates
     static auto FloatToFix = [](float24 flt) {
@@ -420,7 +360,11 @@ static void ProcessTriangleInternal(const Shader::OutputVertex& v0,
         } else {
             // check if vertex is on our left => right side
             // TODO: Not sure how likely this is to overflow
-            return (int)vtx.x < (int)line1.x + ((int)line2.x - (int)line1.x) * ((int)vtx.y - (int)line1.y) / ((int)line2.y - (int)line1.y);
+            int line_dx = static_cast<s16>(line2.x) - static_cast<s16>(line1.x);
+            int line_dy = static_cast<s16>(line2.y) - static_cast<s16>(line1.y);
+            int line_vtx_dx = static_cast<s16>(vtx.x) - static_cast<s16>(line1.x);
+            int line_vtx_dy = static_cast<s16>(vtx.y) - static_cast<s16>(line1.y);
+            return line_vtx_dx < line_vtx_dy * line_dx / line_dy;
         }
     };
     int bias0 = IsRightSideOrFlatBottomEdge(vtxpos[0].xy(), vtxpos[1].xy(), vtxpos[2].xy()) ? -1 : 0;
