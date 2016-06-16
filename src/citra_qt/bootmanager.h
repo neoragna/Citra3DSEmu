@@ -10,6 +10,7 @@
 #include <QThread>
 
 #include "common/emu_window.h"
+#include "common/motion_emu.h"
 #include "common/thread.h"
 
 class QKeyEvent;
@@ -148,6 +149,9 @@ private:
     int keyboard_id;
 
     EmuThread* emu_thread;
+
+    /// Motion sensors emulation
+    std::unique_ptr<Motion::MotionEmu> motion_emu;
 
 protected:
     void showEvent(QShowEvent* event) override;
