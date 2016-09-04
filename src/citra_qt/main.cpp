@@ -36,7 +36,7 @@
 #include "citra_qt/debugger/ramview.h"
 #include "citra_qt/debugger/registers.h"
 
-#include "common/microprofile.h"
+//#include "common/microprofile.h"
 #include "common/platform.h"
 #include "common/scm_rev.h"
 #include "common/scope_exit.h"

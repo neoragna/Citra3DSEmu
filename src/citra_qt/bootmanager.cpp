@@ -11,7 +11,7 @@
 #include "citra_qt/bootmanager.h"
 
 #include "common/key_map.h"
-#include "common/microprofile.h"
+//#include "common/microprofile.h"
 #include "common/scm_rev.h"
 #include "common/string_util.h"
 
@@ -34,7 +34,7 @@ EmuThread::EmuThread(GRenderWindow* render_window) :
 void EmuThread::run() {
     render_window->MakeCurrent();
 
-    MicroProfileOnThreadCreate("EmuThread");
+    //MicroProfileOnThreadCreate("EmuThread");
 
     stop_run = false;
 
