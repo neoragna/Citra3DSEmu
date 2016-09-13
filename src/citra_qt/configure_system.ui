@@ -248,5 +248,12 @@
   </layout>
  </widget>
  <resources/>
- <connections/>
+ <connections>
+  <connection>
+   <sender>combo_birthmonth</sender>
+   <signal>currentIndexChanged(int)</signal>
+   <receiver>ConfigureSystem</receiver>
+   <slot>updateBirthdayComboBox(int)</slot>
+  </connection>
+ </connections>
 </ui>

@@ -8,6 +8,7 @@
 
 #include "core/hle/service/fs/archive.h"
 #include "core/hle/service/cfg/cfg.h"
+#include "core/system.h"
 
 static const std::array<int, 12> days_in_month = {{
     31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31
@@ -17,15 +18,14 @@ ConfigureSystem::ConfigureSystem(QWidget *parent) :
     QWidget(parent),
     ui(new Ui::ConfigureSystem) {
     ui->setupUi(this);
-
-    connect(ui->combo_birthmonth, SIGNAL(currentIndexChanged(int)), SLOT(updateBirthdayComboBox(int)));
+    this->setConfiguration();
 }
 
 ConfigureSystem::~ConfigureSystem() {
 }
 
-void ConfigureSystem::setConfiguration(bool emulation_running) {
-    enabled = !emulation_running;
+void ConfigureSystem::setConfiguration() {
+    enabled = !System::IsPoweredOn();
 
     if (!enabled) {
         ReadSystemSettings();
@@ -58,6 +58,7 @@ void ConfigureSystem::ReadSystemSettings() {
     // set birthday
     std::tie(birthmonth, birthday) = Service::CFG::GetBirthday();
     ui->combo_birthmonth->setCurrentIndex(birthmonth - 1);
+    updateBirthdayComboBox(birthmonth - 1); // update it explicitly because setCurrentIndex won't always emit currentIndexChanged
     ui->combo_birthday->setCurrentIndex(birthday - 1);
 
     // set system language
