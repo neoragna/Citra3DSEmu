@@ -68,6 +68,15 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if (NOT MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-attributes")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
+
+    if (MINGW)
+        add_definitions(-DMINGW_HAS_SECURE_API)
+        if (MINGW_STATIC_BUILD)
+            add_definitions(-DQT_STATICPLUGIN)
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -static")
+            set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
+        endif()
+    endif()
 else()
     # Silence "deprecation" warnings
     add_definitions(/D_CRT_SECURE_NO_WARNINGS /D_CRT_NONSTDC_NO_DEPRECATE /D_SCL_SECURE_NO_WARNINGS)
@@ -118,12 +127,11 @@ else()
 endif()
 
 find_package(Boost 1.57.0 QUIET)
-if (Boost_FOUND)
-    include_directories(${Boost_INCLUDE_DIRS})
-else()
+if (NOT Boost_FOUND)
     message(STATUS "Boost 1.57.0 or newer not found, falling back to externals")
-    include_directories(externals/boost)
+    set(Boost_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/externals/boost")
 endif()
+include_directories(${Boost_INCLUDE_DIR})
 
 # Include bundled CMake modules
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/externals/cmake-modules")
@@ -166,9 +174,8 @@ IF (APPLE)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++")
 ELSEIF(MINGW)
-    # GCC does not support codecvt, so use iconv instead
     # PSAPI is the Process Status API
-    set(PLATFORM_LIBRARIES winmm ws2_32 psapi iconv)
+    set(PLATFORM_LIBRARIES winmm ws2_32 psapi imm32 version)
 
     # WSAPoll functionality doesn't exist before WinNT 6.x (Vista and up)
     add_definitions(-D_WIN32_WINNT=0x0600)
@@ -226,6 +233,9 @@ git_branch_name(GIT_BRANCH)
 set(INI_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/externals/inih")
 include_directories(${INI_PREFIX})
 add_subdirectory(${INI_PREFIX})
+
+option(DYNARMIC_TESTS OFF)
+add_subdirectory(externals/dynarmic)
 
 add_subdirectory(externals/glad)
 include_directories(externals/microprofile)

@@ -37,7 +37,7 @@
 #include "citra_qt/debugger/registers.h"
 #include "citra_qt/debugger/wait_tree.h"
 
-#include "common/microprofile.h"
+//#include "common/microprofile.h"
 #include "common/platform.h"
 #include "common/scm_rev.h"
 #include "common/scope_exit.h"
@@ -55,6 +55,10 @@
 #include "core/loader/loader.h"
 
 #include "video_core/video_core.h"
+
+#ifdef QT_STATICPLUGIN
+Q_IMPORT_PLUGIN(QWindowsIntegrationPlugin);
+#endif
 
 GMainWindow::GMainWindow() : config(new Config()), emu_thread(nullptr)
 {
