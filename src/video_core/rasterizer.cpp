@@ -257,26 +257,6 @@ static u8 PerformStencilAction(Regs::StencilAction action, u8 old_stencil, u8 re
     }
 }
 
-// NOTE: Assuming that rasterizer coordinates are 12.4 fixed-point values
-struct Fix12P4 {
-    Fix12P4() {}
-    Fix12P4(u16 val) : val(val) {}
-
-    static u16 FracMask() { return 0xF; }
-    static u16 IntMask() { return (u16)~0xF; }
-
-    operator u16() const {
-        return val;
-    }
-
-    bool operator < (const Fix12P4& oth) const {
-        return (u16)*this < (u16)oth;
-    }
-
-private:
-    u16 val;
-};
-
 /**
  * Calculate signed area of the triangle spanned by the three argument vertices.
  * The sign denotes an orientation.
@@ -286,8 +266,12 @@ private:
 static int SignedArea (const Math::Vec2<Fix12P4>& vtx1,
                        const Math::Vec2<Fix12P4>& vtx2,
                        const Math::Vec2<Fix12P4>& vtx3) {
-    const auto vec1 = Math::MakeVec(vtx2 - vtx1, 0);
-    const auto vec2 = Math::MakeVec(vtx3 - vtx1, 0);
+    const auto vec1 = Math::MakeVec<int>(static_cast<s16>(vtx2.x) - static_cast<s16>(vtx1.x),
+                                         static_cast<s16>(vtx2.y) - static_cast<s16>(vtx1.y),
+                                         0);
+    const auto vec2 = Math::MakeVec<int>(static_cast<s16>(vtx3.x) - static_cast<s16>(vtx1.x),
+                                         static_cast<s16>(vtx3.y) - static_cast<s16>(vtx1.y),
+                                         0);
     // TODO: There is a very small chance this will overflow for sizeof(int) == 4
     return Math::Cross(vec1, vec2).z;
 };
@@ -304,13 +288,18 @@ static void ProcessTriangleInternal(const Shader::OutputVertex& v0,
                                     bool reversed = false)
 {
     const auto& regs = g_state.regs;
+    const auto& framebuffer = regs.framebuffer;
+    const auto& output_merger = regs.output_merger;
     MICROPROFILE_SCOPE(GPU_Rasterization);
+
+    // NOTE: Assuming that rasterizer coordinates are signed 12.4 fixed-point values.
+    //       This type is what PSP uses, we haven't tested what the 3DS uses.
 
     // vertex positions in rasterizer coordinates
     static auto FloatToFix = [](float24 flt) {
-        // TODO: Rounding here is necessary to prevent garbage pixels at
+        // TODO: Rounding in Fix12P4::FromFloat is necessary to prevent garbage pixels at
         //       triangle borders. Is it that the correct solution, though?
-        return Fix12P4(static_cast<unsigned short>(round(flt.ToFloat32() * 16.0f)));
+        return Fix12P4::FromFloat(flt.ToFloat32());
     };
     static auto ScreenToRasterizerCoordinates = [](const Math::Vec3<float24>& vec) {
         return Math::Vec3<Fix12P4>{FloatToFix(vec.x), FloatToFix(vec.y), FloatToFix(vec.z)};
@@ -338,16 +327,24 @@ static void ProcessTriangleInternal(const Shader::OutputVertex& v0,
             return;
     }
 
-    // TODO: Proper scissor rect test!
-    u16 min_x = std::min({vtxpos[0].x, vtxpos[1].x, vtxpos[2].x});
-    u16 min_y = std::min({vtxpos[0].y, vtxpos[1].y, vtxpos[2].y});
-    u16 max_x = std::max({vtxpos[0].x, vtxpos[1].x, vtxpos[2].x});
-    u16 max_y = std::max({vtxpos[0].y, vtxpos[1].y, vtxpos[2].y});
+    // Get bounding box for triangle
+    Fix12P4 min_x = std::min({vtxpos[0].x, vtxpos[1].x, vtxpos[2].x});
+    Fix12P4 min_y = std::min({vtxpos[0].y, vtxpos[1].y, vtxpos[2].y});
+    Fix12P4 max_x = std::max({vtxpos[0].x, vtxpos[1].x, vtxpos[2].x});
+    Fix12P4 max_y = std::max({vtxpos[0].y, vtxpos[1].y, vtxpos[2].y});
 
-    min_x &= Fix12P4::IntMask();
-    min_y &= Fix12P4::IntMask();
-    max_x = ((max_x + Fix12P4::FracMask()) & Fix12P4::IntMask());
-    max_y = ((max_y + Fix12P4::FracMask()) & Fix12P4::IntMask());
+    // TODO: Proper scissor rect test!
+
+    min_x = min_x.Floor();
+    min_y = min_y.Floor();
+    max_x = max_x.Ceil();
+    max_y = max_y.Ceil();
+
+    // Keep pixels inside framebuffer
+    min_x = std::max(min_x, Fix12P4::Zero());
+    min_y = std::max(min_y, Fix12P4::Zero());
+    max_x = std::min(max_x, Fix12P4::FromInt(framebuffer.GetWidth()));
+    max_y = std::min(max_y, Fix12P4::FromInt(framebuffer.GetHeight()));
 
     // Triangle filling rules: Pixels on the right-sided edge or on flat bottom edges are not
     // drawn. Pixels on any other triangle border are drawn. This is implemented with three bias
@@ -363,7 +360,11 @@ static void ProcessTriangleInternal(const Shader::OutputVertex& v0,
         } else {
             // check if vertex is on our left => right side
             // TODO: Not sure how likely this is to overflow
-            return (int)vtx.x < (int)line1.x + ((int)line2.x - (int)line1.x) * ((int)vtx.y - (int)line1.y) / ((int)line2.y - (int)line1.y);
+            int line_dx = static_cast<s16>(line2.x) - static_cast<s16>(line1.x);
+            int line_dy = static_cast<s16>(line2.y) - static_cast<s16>(line1.y);
+            int line_vtx_dx = static_cast<s16>(vtx.x) - static_cast<s16>(line1.x);
+            int line_vtx_dy = static_cast<s16>(vtx.y) - static_cast<s16>(line1.y);
+            return line_vtx_dx < line_vtx_dy * line_dx / line_dy;
         }
     };
     int bias0 = IsRightSideOrFlatBottomEdge(vtxpos[0].xy(), vtxpos[1].xy(), vtxpos[2].xy()) ? -1 : 0;
@@ -375,13 +376,15 @@ static void ProcessTriangleInternal(const Shader::OutputVertex& v0,
     auto textures = regs.GetTextures();
     auto tev_stages = regs.GetTevStages();
 
-    bool stencil_action_enable = g_state.regs.output_merger.stencil_test.enable && g_state.regs.framebuffer.depth_format == Regs::DepthFormat::D24S8;
-    const auto stencil_test = g_state.regs.output_merger.stencil_test;
+    bool stencil_action_enable = output_merger.stencil_test.enable && framebuffer.depth_format == Regs::DepthFormat::D24S8;
+    const auto stencil_test = output_merger.stencil_test;
 
     // Enter rasterization loop, starting at the center of the topleft bounding box corner.
     // TODO: Not sure if looping through x first might be faster
-    for (u16 y = min_y + 8; y < max_y; y += 0x10) {
-        for (u16 x = min_x + 8; x < max_x; x += 0x10) {
+    Fix12P4 pixel = Fix12P4::FromInt(1);
+    Fix12P4 half_pixel = pixel / Fix12P4::FromInt(2);
+    for (Fix12P4 y = min_y + half_pixel; y < max_y; y += pixel) {
+        for (Fix12P4 x = min_x + half_pixel; x < max_x; x += pixel) {
 
             // Calculate the barycentric coordinates w0, w1 and w2
             int w0 = bias0 + SignedArea(vtxpos[1].xy(), vtxpos[2].xy(), {x, y});
@@ -810,7 +813,6 @@ static void ProcessTriangleInternal(const Shader::OutputVertex& v0,
                 }
             }
 
-            const auto& output_merger = regs.output_merger;
             // TODO: Does alpha testing happen before or after stencil?
             if (output_merger.alpha_test.enable) {
                 bool pass = false;
@@ -890,11 +892,11 @@ static void ProcessTriangleInternal(const Shader::OutputVertex& v0,
             auto UpdateStencil = [stencil_test, x, y, &old_stencil](Pica::Regs::StencilAction action) {
                 u8 new_stencil = PerformStencilAction(action, old_stencil, stencil_test.reference_value);
                 if (g_state.regs.framebuffer.allow_depth_stencil_write != 0)
-                    SetStencil(x >> 4, y >> 4, (new_stencil & stencil_test.write_mask) | (old_stencil & ~stencil_test.write_mask));
+                    SetStencil(x.Int(), y.Int(), (new_stencil & stencil_test.write_mask) | (old_stencil & ~stencil_test.write_mask));
             };
 
             if (stencil_action_enable) {
-                old_stencil = GetStencil(x >> 4, y >> 4);
+                old_stencil = GetStencil(x.Int(), y.Int());
                 u8 dest = old_stencil & stencil_test.input_mask;
                 u8 ref = stencil_test.reference_value & stencil_test.input_mask;
 
@@ -944,7 +946,7 @@ static void ProcessTriangleInternal(const Shader::OutputVertex& v0,
             u32 z = (u32)(depth * ((1 << num_bits) - 1));
 
             if (output_merger.depth_test_enable) {
-                u32 ref_z = GetDepth(x >> 4, y >> 4);
+                u32 ref_z = GetDepth(x.Int(), y.Int());
 
                 bool pass = false;
 
@@ -989,14 +991,14 @@ static void ProcessTriangleInternal(const Shader::OutputVertex& v0,
                 }
             }
 
-            if (regs.framebuffer.allow_depth_stencil_write != 0 && output_merger.depth_write_enable)
-                SetDepth(x >> 4, y >> 4, z);
+            if (framebuffer.allow_depth_stencil_write != 0 && output_merger.depth_write_enable)
+                SetDepth(x.Int(), y.Int(), z);
 
             // The stencil depth_pass action is executed even if depth testing is disabled
             if (stencil_action_enable)
                 UpdateStencil(stencil_test.action_depth_pass);
 
-            auto dest = GetPixel(x >> 4, y >> 4);
+            auto dest = GetPixel(x.Int(), y.Int());
             Math::Vec4<u8> blend_output = combiner_output;
 
             if (output_merger.alphablend_enable) {
@@ -1198,8 +1200,8 @@ static void ProcessTriangleInternal(const Shader::OutputVertex& v0,
                 output_merger.alpha_enable ? blend_output.a() : dest.a()
             };
 
-            if (regs.framebuffer.allow_color_write != 0)
-                DrawPixel(x >> 4, y >> 4, result);
+            if (framebuffer.allow_color_write != 0)
+                DrawPixel(x.Int(), y.Int(), result);
         }
     }
 }
