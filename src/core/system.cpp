@@ -4,6 +4,7 @@
 
 #include "audio_core/audio_core.h"
 
+#include "core/cheat_core.h"
 #include "core/core.h"
 #include "core/core_timing.h"
 #include "core/system.h"
@@ -12,7 +13,6 @@
 #include "core/hle/hle.h"
 #include "core/hle/kernel/kernel.h"
 #include "core/hle/kernel/memory.h"
-
 #include "video_core/video_core.h"
 
 namespace System {
@@ -30,6 +30,7 @@ Result Init(EmuWindow* emu_window) {
         return Result::ErrorInitVideoCore;
     }
     AudioCore::Init();
+    CheatCore::Init();
     GDBStub::Init();
 
     is_powered_on = true;
@@ -43,6 +44,7 @@ bool IsPoweredOn() {
 
 void Shutdown() {
     GDBStub::Shutdown();
+    CheatCore::Shutdown();
     AudioCore::Shutdown();
     VideoCore::Shutdown();
     HLE::Shutdown();
