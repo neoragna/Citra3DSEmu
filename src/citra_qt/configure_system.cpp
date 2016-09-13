@@ -19,8 +19,6 @@ ConfigureSystem::ConfigureSystem(QWidget *parent) :
     ui(new Ui::ConfigureSystem) {
     ui->setupUi(this);
     this->setConfiguration();
-
-    connect(ui->combo_birthmonth, SIGNAL(currentIndexChanged(int)), SLOT(updateBirthdayComboBox(int)));
 }
 
 ConfigureSystem::~ConfigureSystem() {
@@ -60,6 +58,7 @@ void ConfigureSystem::ReadSystemSettings() {
     // set birthday
     std::tie(birthmonth, birthday) = Service::CFG::GetBirthday();
     ui->combo_birthmonth->setCurrentIndex(birthmonth - 1);
+    updateBirthdayComboBox(birthmonth - 1); // update it explicitly because setCurrentIndex won't always emit currentIndexChanged
     ui->combo_birthday->setCurrentIndex(birthday - 1);
 
     // set system language
